@@ -1,7 +1,4 @@
-import customtkinter as ctk
-
 class Compiler:
-
     TOKENS = {
         '+': 'ADDITION',
         '-': 'SUBTRACTION',
@@ -9,10 +6,9 @@ class Compiler:
         '/': 'DIVISION',
         '=': 'ASSIGN',
         '(': 'LPAREN',
-        ')': 'RPAREN'
+        ')': 'RPAREN',
+        'for': 'FOR'
     }
-    def __init__(self):
-        pass
 
     def tokenize(self, input):
         token = []
@@ -44,11 +40,3 @@ class Compiler:
                 continue
             raise ValueError(f"Unknown character: {char}")
         return token
-    
-
-
-if __name__ == "__main__":
-
-    compiler = Compiler()
-    input = "b  = 10 + 3"
-    print(compiler.tokenize(input))
