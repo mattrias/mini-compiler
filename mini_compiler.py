@@ -113,77 +113,47 @@ class Compiler:
 
     def parse(self, tokens):
         statements = []
-
         while tokens:
-            token = tokens.pop(0)
-
-            if token[0] == 'IDENTIFIER':
-                if tokens and tokens[0][0] == 'ASSIGN':
-                    tokens.pop(0)
-                    value = self.parse_expression(tokens)
-                    statements.append(AssignmentNode(IdentifierNode(token[1]), value))
-                    self.require_semicolon(tokens)  # Enforce semicolon
-                    continue
-
-            elif token[0] == 'COUT':
-                if not tokens:
-                    raise ValueError("Expected '<<' after 'cout', but found end of input")
-
-                if tokens[0][0] == 'SHIFT_LEFT':
-                    tokens.pop(0)
-                    value = self.parse_expression(tokens)
-                    statements.append(PrintNode(value))
-                    self.require_semicolon(tokens)  # Enforce semicolon
-                    continue
-                else:
-                    raise ValueError(f"Expected '<<' after 'cout', but found '{tokens[0][1]}'")
-
-            elif token[0] == 'IF':
-                condition = self.parse_expression(tokens)
-                then_branch = self.parse(tokens)
-                else_branch = None
-                if tokens and tokens[0][0] == 'ELSE':
-                    tokens.pop(0)
-                    else_branch = self.parse(tokens)
-                statements.append(IfNode(condition, then_branch, else_branch))
-                self.require_semicolon(tokens)
-                continue
-
-
-            elif token[0] == 'FOR':
-                if not tokens or tokens.pop(0)[0] != 'LPAREN':
-                    raise ValueError("Missing '(' after 'for'")
-
-                initialization = self.parse_expression(tokens)
-                self.require_semicolon(tokens)
-                condition = self.parse_expression(tokens)
-                self.require_semicolon(tokens)
-                increment = self.parse_expression(tokens)
-
-                if not tokens or tokens.pop(0)[0] != 'RPAREN':
-                    raise ValueError("Missing ')' after for-loop declaration")
-
-                if not tokens or tokens.pop(0)[0] != 'LBRACE':
-                    raise ValueError("Missing '{' before for-loop body")
-
-                body = self.parse(tokens)
-
-                if not tokens or tokens.pop(0)[0] != 'RBRACE':
-                    raise ValueError("Missing '}' after for-loop body")
-
-                statements.append(ForNode(initialization, condition, increment, body))
-
-                continue
-
-            elif token[0] == 'WHILE':
-                condition = self.parse_expression(tokens)
-                body = self.parse(tokens)
-                statements.append(WhileNode(condition, body))
-                self.require_semicolon(tokens)
-                continue
-            raise ValueError(f"Unexpected token: {token}")
-
+            statement = self.parse_statement(tokens)
+            if statement:
+                statements.append(statement)
         return statements
+    
+    def parse_statement(self, tokens):
+        if not tokens:
+            return None
+
+        token = tokens.pop(0)
+
+        if token[0] == 'IDENTIFIER':
+            if tokens and tokens[0][0] == 'ASSIGN':
+                tokens.pop(0)
+                value = self.parse_expression(tokens)
+                self.require_semicolon(tokens)
+                return AssignmentNode(IdentifierNode(token[1]), value)
+
+        elif token[0] == 'COUT':
+            if not tokens or tokens.pop(0)[0] != 'SHIFT_LEFT':
+                raise ValueError("Expected '<<' after 'cout'")
+            value = self.parse_expression(tokens)
+            self.require_semicolon(tokens)
+            return PrintNode(value)
+
+        elif token[0] == 'IF':
+            if not tokens or tokens.pop(0)[0] != 'LPAREN':
+                raise ValueError("Expected '(' after 'if'")
+            condition = self.parse_expression(tokens)
+            if not tokens or tokens.pop(0)[0] != 'RPAREN':
+                raise ValueError("Expected ')' after condition")
+            then_branch = self.parse_block(tokens)
+            else_branch = None
+            if tokens and tokens[0][0] == 'ELSE':
+                tokens.pop(0)
+                else_branch = self.parse_block(tokens)
+            return IfNode(condition, then_branch, else_branch)
+
+        else:
+            raise ValueError(f"Unexpected token: {token}")
 
     def parse_expression(self, tokens):
         # Parse leftmost term
@@ -191,7 +161,10 @@ class Compiler:
 
         # Handle subsequent operations
         while tokens and tokens[0][0] in ['ADDITION', 'SUBTRACTION',
-                                          'MULTIPLICATION', 'DIVISION']:
+                                      'MULTIPLICATION', 'DIVISION',
+                                      'GREATER_THAN', 'LESS_THAN',
+                                      'GREATER_EQUAL', 'LESS_EQUAL',
+                                      'EQUAL', 'NOT_EQUAL']:
             op_token = tokens.pop(0)
             right = self.parse_term(tokens)
             left = BinaryOperationNode(left, op_token[1], right)
@@ -217,7 +190,9 @@ class Compiler:
 
         block = []
         while tokens and tokens[0][0] != 'RBRACE':
-            block.extend(self.parse(tokens))
+            statement = self.parse_statement(tokens)
+            if statement:
+                block.append(statement)
 
         if not tokens or tokens.pop(0)[0] != 'RBRACE':
             raise ValueError("Expected '}' to close block")
@@ -225,23 +200,29 @@ class Compiler:
         return block
 
     def evaluate(self, node):
+        print(f"Debug: Evaluating Node: {node}")  # Debug print
         if isinstance(node, list):  # Handle a list of statements
             result = None
             for stmt in node:
                 result = self.evaluate(stmt)
-            return result  # Return the last evaluated result (if needed)
+            return result 
 
         elif isinstance(node, NumberNode):
+            print(f"Debug: Number Node Value: {node.value}")  # Debug print
             return node.value
 
         elif isinstance(node, IdentifierNode):
+            print(f"Debug: Identifier Node Name: {node.name}")  # Debug print
             if node.name in self.symbol_table:
                 return self.symbol_table[node.name]
             raise ValueError(f"Undefined variable: {node.name}")
 
         elif isinstance(node, BinaryOperationNode):
+            print(f"Debug: Binary Operation: {node.operator}")  # Debug print
             left_value = self.evaluate(node.left)
             right_value = self.evaluate(node.right)
+            print(f"Debug: Left Value: {left_value}, Right Value: {right_value}")  # Debug print
+
             if node.operator == '+':
                 return left_value + right_value
             elif node.operator == '-':
@@ -250,30 +231,42 @@ class Compiler:
                 return left_value * right_value
             elif node.operator == '/':
                 return left_value / right_value
+            elif node.operator == '>':
+                return left_value > right_value
+            elif node.operator == '<':
+                return left_value < right_value
+            elif node.operator == '>=':
+                return left_value >= right_value
+            elif node.operator == '<=':
+                return left_value <= right_value
+            elif node.operator == '==':
+                return left_value == right_value
+            elif node.operator == '!=':
+                return left_value != right_value
+            else:
+                raise ValueError(f"Unknown binary operator: {node.operator}")
+            
 
         elif isinstance(node, AssignmentNode):
+            print(f"Debug: Assignment Node: {node.identifier.name} = {node.value}")  # Debug print
             value = self.evaluate(node.value)
             self.symbol_table[node.identifier.name] = value
-            return None  # Do not return anything for assignments
+            return None
 
         elif isinstance(node, PrintNode):
+            print(f"Debug: Print Node Value: {node.value}")  # Debug print
             value = self.evaluate(node.value)
-            return value  # Return the value to be printed
+            print(value)  # Print the value
+            return value
 
         elif isinstance(node, IfNode):
+            print(f"Debug: If Node Condition: {node.condition}")  # Debug print
             condition_value = self.evaluate(node.condition)
+            print(f"Debug: Condition Value: {condition_value}")  # Debug print
             if condition_value:
                 return self.evaluate(node.then_branch)
             elif node.else_branch:
                 return self.evaluate(node.else_branch)
-
-        elif isinstance(node, ForNode):
-            # Implement the for loop logic
-            pass
-
-        elif isinstance(node, WhileNode):
-            while self.evaluate(node.condition):
-                self.evaluate(node.body)
 
         raise ValueError(f"Unknown AST node: {node}")
 
