@@ -2,9 +2,14 @@ class ASTNode:
     pass
 
 class NumberNode(ASTNode):
+    def __init__(self, value, data_type):
+        self.value = value
+        self.data_type = data_type
+
+class StringNode(ASTNode):
     def __init__(self, value):
         self.value = value
-
+        self.data_type = 'STRING'
 class IdentifierNode(ASTNode):
     def __init__(self, name):
         self.name = name
@@ -16,9 +21,10 @@ class BinaryOperationNode(ASTNode):
         self.right = right
 
 class AssignmentNode(ASTNode):
-    def __init__(self, identifier, value):
+    def __init__(self, identifier, value, data_type=None):
         self.identifier = identifier
         self.value = value
+        self.data_type = data_type
 
 class IfNode(ASTNode):
     def __init__(self, condition, then_branch, else_branch=None):
@@ -40,6 +46,12 @@ class WhileNode(ASTNode):
 
 class PrintNode(ASTNode):
     def __init__(self, value):
+        self.value = value
+
+class VariableDeclarationNode(ASTNode):
+    def __init__(self, identifier, data_type, value=None):
+        self.identifier = identifier
+        self.data_type = data_type
         self.value = value
 class Compiler:
     TOKENS = {
@@ -65,7 +77,16 @@ class Compiler:
         '==': 'EQUAL',
         '!=': 'NOT_EQUAL',
         'cout': 'COUT',
-        '<<': 'SHIFT_LEFT'
+        '<<': 'SHIFT_LEFT',
+        'int': 'INT_KEYWORD',
+        'float': 'FLOAT_KEYWORD',
+        'string': 'STRING_KEYWORD'
+    }
+
+    DATA_TYPES = {
+        'int': int,
+        'float': float,
+        'string': str
     }
 
     def __init__(self):
@@ -92,11 +113,32 @@ class Compiler:
             if char.isdigit():
                 num = char
                 i += 1
-                while i < len(input) and input[i].isdigit():
+                has_decimal = False
+                while i < len(input) and (input[i].isdigit() or input[i] == '.'):
+                    if input[i] == '.':
+                        if has_decimal:
+                            raise ValueError("Invalid number format: Multiple decimal points")
+                        has_decimal = True
                     num += input[i]
                     i += 1
-                tokens.append(('NUMBER', int(num)))
+                if has_decimal:
+                    tokens.append(('FLOAT', float(num)))
+                else:
+                    tokens.append(('INT', int(num)))
                 continue
+
+            if char == '"':
+                i += 1
+                string_value = ''
+                while i < len(input) and input[i] != '"':
+                    string_value += input[i]
+                    i += 1
+                if i == len(input):
+                    raise ValueError("Unterminated string")
+                tokens.append(('STRING', string_value))
+                i += 1
+                continue
+
             if char.isalpha() or char == '_':
                 ident = char
                 i += 1
@@ -108,6 +150,7 @@ class Compiler:
                 else:
                     tokens.append(('IDENTIFIER', ident))
                 continue
+
             raise ValueError(f"Unknown character: {char}")
         return tokens
 
@@ -125,12 +168,36 @@ class Compiler:
 
         token = tokens.pop(0)
 
-        if token[0] == 'IDENTIFIER':
-            if tokens and tokens[0][0] == 'ASSIGN':
-                tokens.pop(0)
-                value = self.parse_expression(tokens)
-                self.require_semicolon(tokens)
-                return AssignmentNode(IdentifierNode(token[1]), value)
+            if token[0] in ['INT_KEYWORD', 'FLOAT_KEYWORD', 'STRING_KEYWORD']:
+                data_type = token[1]
+                if not tokens or tokens[0][0] != 'IDENTIFIER':
+                    raise ValueError(f"Expected identifier after data type '{data_type}'")
+                identifier_token = tokens.pop(0)
+                identifier = identifier_token[1]
+
+                if tokens and tokens[0][0] == 'ASSIGN':
+                    tokens.pop(0)
+                    value = self.parse_expression(tokens)
+                    # Type checking before assignment
+                    expected_type = self.DATA_TYPES[data_type]
+                    if not self.is_valid_type(value, expected_type):
+                        raise ValueError(f"Type mismatch: Expected {data_type} but got {value.data_type}")
+                    statements.append(AssignmentNode(IdentifierNode(identifier), value, data_type))
+                    self.symbol_table[identifier] = {'type': data_type, 'value': None}  # Store type in symbol table
+                    self.require_semicolon(tokens)
+                else:
+                    statements.append(VariableDeclarationNode(IdentifierNode(identifier), data_type))
+                    self.symbol_table[identifier] = {'type': data_type, 'value': None}  # Store type in symbol table
+                    self.require_semicolon(tokens)
+                continue
+
+            if token[0] == 'IDENTIFIER':
+                if tokens and tokens[0][0] == 'ASSIGN':
+                    tokens.pop(0)
+                    value = self.parse_expression(tokens)
+                    statements.append(AssignmentNode(IdentifierNode(token[1]), value))
+                    self.require_semicolon(tokens)  # Enforce semicolon
+                    continue
 
         elif token[0] == 'COUT':
             if not tokens or tokens.pop(0)[0] != 'SHIFT_LEFT':
@@ -173,8 +240,12 @@ class Compiler:
 
     def parse_term(self, tokens):
         token = tokens.pop(0)
-        if token[0] == 'NUMBER':
-            return NumberNode(token[1])
+        if token[0] == 'INT':
+            return NumberNode(token[1], 'int')
+        elif token[0] == 'FLOAT':
+            return NumberNode(token[1], 'float')
+        elif token[0] == 'STRING':
+            return StringNode(token[1])
         elif token[0] == 'IDENTIFIER':
             return IdentifierNode(token[1])
         elif token[0] == 'LPAREN':
@@ -230,6 +301,8 @@ class Compiler:
             elif node.operator == '*':
                 return left_value * right_value
             elif node.operator == '/':
+                if right_value == 0:
+                    raise ValueError("Division by zero")
                 return left_value / right_value
             elif node.operator == '>':
                 return left_value > right_value
@@ -268,9 +341,33 @@ class Compiler:
             elif node.else_branch:
                 return self.evaluate(node.else_branch)
 
+        elif isinstance(node, ForNode):
+            # Implement the for loop logic
+            pass
+
+        elif isinstance(node, WhileNode):
+            while self.evaluate(node.condition):
+                self.evaluate(node.body)
+
+        elif isinstance(node, VariableDeclarationNode):
+            identifier = node.identifier.name
+            data_type = node.data_type
+            self.symbol_table[identifier] = {'type': data_type, 'value': None}
+            return None
         raise ValueError(f"Unknown AST node: {node}")
 
     def require_semicolon(self, tokens):
         if not tokens or tokens.pop(0)[0] != 'SEMICOLON':
             raise ValueError("Expected semicolon at the end of the statement")
 
+    def is_valid_type(self, node, expected_type):
+        if isinstance(node, NumberNode):
+            if node.data_type == 'int' and expected_type == int:
+                return True
+            elif node.data_type == 'float' and expected_type == float:
+                return True
+            else:
+                return False
+        elif isinstance(node, StringNode):
+            return expected_type == str
+        return False
