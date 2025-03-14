@@ -162,63 +162,85 @@ class Compiler:
                 statements.append(statement)
         return statements
     
-    def parse_statement(self, tokens):
+    def parse_statement(self, tokens, statements):
         if not tokens:
             return None
 
         token = tokens.pop(0)
 
-            if token[0] in ['INT_KEYWORD', 'FLOAT_KEYWORD', 'STRING_KEYWORD']:
-                data_type = token[1]
-                if not tokens or tokens[0][0] != 'IDENTIFIER':
-                    raise ValueError(f"Expected identifier after data type '{data_type}'")
-                identifier_token = tokens.pop(0)
-                identifier = identifier_token[1]
+        # Variable Declaration (int, float, string)
+        if token[0] in ['INT_KEYWORD', 'FLOAT_KEYWORD', 'STRING_KEYWORD']:
+            data_type = token[1]
+            if not tokens or tokens[0][0] != 'IDENTIFIER':
+                raise ValueError(f"Expected identifier after data type '{data_type}'")
+            
+            identifier_token = tokens.pop(0)
+            identifier = identifier_token[1]
 
-                if tokens and tokens[0][0] == 'ASSIGN':
-                    tokens.pop(0)
-                    value = self.parse_expression(tokens)
-                    # Type checking before assignment
-                    expected_type = self.DATA_TYPES[data_type]
-                    if not self.is_valid_type(value, expected_type):
-                        raise ValueError(f"Type mismatch: Expected {data_type} but got {value.data_type}")
-                    statements.append(AssignmentNode(IdentifierNode(identifier), value, data_type))
-                    self.symbol_table[identifier] = {'type': data_type, 'value': None}  # Store type in symbol table
-                    self.require_semicolon(tokens)
-                else:
-                    statements.append(VariableDeclarationNode(IdentifierNode(identifier), data_type))
-                    self.symbol_table[identifier] = {'type': data_type, 'value': None}  # Store type in symbol table
-                    self.require_semicolon(tokens)
-                continue
+            # Variable Initialization
+            if tokens and tokens[0][0] == 'ASSIGN':
+                tokens.pop(0)
+                value = self.parse_expression(tokens)
+                expected_type = self.DATA_TYPES[data_type]
+                
+                # Type checking
+                if not self.is_valid_type(value, expected_type):
+                    raise ValueError(f"Type mismatch: Expected {data_type} but got {value.data_type}")
+                
+                statements.append(AssignmentNode(IdentifierNode(identifier), value, data_type))
+            else:
+                # Declaration without initialization
+                statements.append(VariableDeclarationNode(IdentifierNode(identifier), data_type))
+            
+            # Update symbol table
+            self.symbol_table[identifier] = {'type': data_type, 'value': None}
+            self.require_semicolon(tokens)
 
-            if token[0] == 'IDENTIFIER':
-                if tokens and tokens[0][0] == 'ASSIGN':
-                    tokens.pop(0)
-                    value = self.parse_expression(tokens)
-                    statements.append(AssignmentNode(IdentifierNode(token[1]), value))
-                    self.require_semicolon(tokens)  # Enforce semicolon
-                    continue
+        # Variable Assignment
+        elif token[0] == 'IDENTIFIER':
+            identifier = token[1]
+            if tokens and tokens[0][0] == 'ASSIGN':
+                tokens.pop(0)
+                value = self.parse_expression(tokens)
 
+                # Type check if the identifier exists in the symbol table
+                if identifier in self.symbol_table:
+                    expected_type = self.symbol_table[identifier]['type']
+                    if not self.is_valid_type(value, self.DATA_TYPES[expected_type]):
+                        raise ValueError(f"Type mismatch: Expected {expected_type} but got {value.data_type}")
+                
+                statements.append(AssignmentNode(IdentifierNode(identifier), value))
+                self.require_semicolon(tokens)
+            else:
+                raise ValueError(f"Expected '=' after identifier '{identifier}'")
+
+        # Print Statement (cout)
         elif token[0] == 'COUT':
             if not tokens or tokens.pop(0)[0] != 'SHIFT_LEFT':
                 raise ValueError("Expected '<<' after 'cout'")
+            
             value = self.parse_expression(tokens)
             self.require_semicolon(tokens)
-            return PrintNode(value)
+            statements.append(PrintNode(value))
 
+        # If Statement
         elif token[0] == 'IF':
             if not tokens or tokens.pop(0)[0] != 'LPAREN':
                 raise ValueError("Expected '(' after 'if'")
+            
             condition = self.parse_expression(tokens)
+            
             if not tokens or tokens.pop(0)[0] != 'RPAREN':
                 raise ValueError("Expected ')' after condition")
+            
             then_branch = self.parse_block(tokens)
             else_branch = None
+            
             if tokens and tokens[0][0] == 'ELSE':
                 tokens.pop(0)
                 else_branch = self.parse_block(tokens)
-            return IfNode(condition, then_branch, else_branch)
-
+            
+            statements.append(IfNode(condition, then_branch, else_branch))
         else:
             raise ValueError(f"Unexpected token: {token}")
 
