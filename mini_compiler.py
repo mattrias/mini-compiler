@@ -5,6 +5,10 @@ class NumberNode(ASTNode):
     def __init__(self, value):
         self.value = value
 
+class StringNode(ASTNode):
+    def __init__(self, value):
+        self.value = value
+
 class IdentifierNode(ASTNode):
     def __init__(self, name):
         self.name = name
@@ -127,6 +131,17 @@ class Compiler:
                     tokens.append((self.TOKENS[ident], ident))
                 else:
                     tokens.append(('IDENTIFIER', ident))
+                continue
+            if char == '\"':  # Start of a string literal
+                string_value = ''
+                i += 1
+                while i < len(input) and input[i] != '\"':  
+                    string_value += input[i]
+                    i += 1
+                if i >= len(input) or input[i] != '\"':
+                    raise ValueError("Unterminated string literal")
+                i += 1  # Skip closing quote
+                tokens.append(('STRING', string_value))
                 continue
             raise ValueError(f"Unknown character: {char}")
         return tokens
@@ -254,6 +269,9 @@ class Compiler:
             if not tokens or tokens.pop(0)[0] != 'RPAREN':
                 raise ValueError("Mismatched parentheses")
             return expr
+        elif token[0] == 'STRING':
+            return StringNode(token[1])  # New StringNode
+
         raise ValueError(f"Unexpected term: {token}")
 
     def parse_block(self, tokens):
@@ -306,6 +324,11 @@ class Compiler:
             print(f"Debug: Number Node Value: {node.value}")  # Debug print
             return node.value
 
+        elif isinstance(node, StringNode):
+            print(f"Debug: String Node Value: {node.value}")  # Debug print
+            return node.value
+
+        
         elif isinstance(node, IdentifierNode):
             print(f"Debug: Identifier Node Name: {node.name}")  # Debug print
             if node.name in self.symbol_table:
@@ -319,7 +342,14 @@ class Compiler:
             print(f"Debug: Left Value: {left_value}, Right Value: {right_value}")  # Debug print
 
             if node.operator == '+':
-                return left_value + right_value
+                if isinstance(left_value, (int, float)) and isinstance(right_value, (int, float)):
+                    return left_value + right_value  # Numeric addition
+                elif isinstance(left_value, str) and isinstance(right_value, str):
+                    return left_value + right_value  # String concatenation
+                elif isinstance(left_value, (int, float)) and isinstance(right_value, str) or isinstance(left_value, str) and isinstance(right_value, (int, float)):
+                    return str(left_value) + str(right_value)  # Hybrid concatenation
+                else:
+                  raise TypeError("Unsupported operands for +")
             elif node.operator == '-':
                 return left_value - right_value
             elif node.operator == '*':
@@ -349,9 +379,10 @@ class Compiler:
             return None
 
         elif isinstance(node, PrintNode):
-            print(f"Debug: Print Node Value: {node.value}")  # Debug print
-            value = str(self.evaluate(node.value))
-            self.output.append(value) 
+            value = self.evaluate(node.value)
+            if not isinstance(value, (str, int, float)):
+                raise TypeError("Print statement only supports numbers and strings")
+            self.output.append(str(value))
             return value
 
         elif isinstance(node, IfNode):
