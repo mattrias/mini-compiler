@@ -48,13 +48,23 @@ class TokenizerApp(ctk.CTk):
             self.output.insert("end", f"Error: {e}")
 
     def evaluate_input(self):
-        expression = self.entry.get("1.0", "end-1c")  # Get all text from the textbox
+        expression = self.entry.get("1.0", "end-1c")  
         try:
             tokens = self.compiler.tokenize(expression)
             statements = self.compiler.parse(tokens)
-            result = self.compiler.evaluate(statements)
-            self.result_output.delete("1.0", "end")
-            self.result_output.insert("end", f"Result: {result}\n")
+
+            self.compiler.evaluate(statements)
+            
+            if self.compiler.output:
+                output_result = " ".join(self.compiler.output)
+                self.result_output.delete("1.0", "end")
+                self.result_output.insert("end", f"Result: {output_result}")
+            else:
+                self.result_output.delete("1.0", "end")
+                self.result_output.insert("end", "Result: No Output")
+            
+            self.compiler.output.clear()
+            
         except ValueError as e:
             self.result_output.delete("1.0", "end")
             self.result_output.insert("end", f"Error: {e}")
