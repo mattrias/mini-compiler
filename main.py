@@ -6,6 +6,8 @@ class TokenizerApp(ctk.CTk):
         super().__init__()
         self.title("Mini Compiler - Tokenizer")
         self.geometry("400x700")
+
+        ctk.set_appearance_mode("dark")
         self.compiler = Compiler()
 
         # Input Label & Entry
@@ -52,11 +54,10 @@ class TokenizerApp(ctk.CTk):
         try:
             tokens = self.compiler.tokenize(expression)
             statements = self.compiler.parse(tokens)
-
             self.compiler.evaluate(statements)
             
             if self.compiler.output:
-                output_result = " ".join(self.compiler.output)
+                output_result = " \n".join(self.compiler.output)
                 self.result_output.delete("1.0", "end")
                 self.result_output.insert("end", f"Result: {output_result}")
             else:
