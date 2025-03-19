@@ -83,7 +83,10 @@ class Compiler:
         'cout': 'COUT',
         '<<': 'SHIFT_LEFT',
         '++': 'INCREMENT',
-        '--': 'DECREMENT'
+        '--': 'DECREMENT',
+        'int': 'INT',
+        'float': 'FLOAT',
+        'string': 'STRING'
     }
     
     DATA_TYPES = {
@@ -124,7 +127,7 @@ class Compiler:
                 while i < len(input) and (input[i].isdigit() or input[i] == '.'):
                     if input[i] == '.':
                         if has_decimal:
-                            raise ValueError("Invalid number format: Multiple decimal points")
+                            raise ValueError("Invalid number format: Multiple decimal points" + "\n")
                         has_decimal = True
                     num += input[i]
                     i += 1
@@ -141,7 +144,7 @@ class Compiler:
                     string_value += input[i]
                     i += 1
                 if i == len(input):
-                    raise ValueError("Unterminated string")
+                    raise ValueError("Unterminated string" + "\n")
                 tokens.append(('STRING', string_value))
                 i += 1
                 continue
@@ -165,12 +168,12 @@ class Compiler:
                     string_value += input[i]
                     i += 1
                 if i >= len(input) or input[i] != '\"':
-                    raise ValueError("Unterminated string literal")
+                    raise ValueError("Unterminated string literal" + "\n")
                 i += 1  # Skip closing quote
                 tokens.append(('STRING', string_value))
                 continue
 
-            raise ValueError(f"Unknown character: {char}")
+            raise ValueError(f"Unknown character: {char}" + "\n")
         return tokens
     
     def is_valid_type(self, value, expected_type):
@@ -194,118 +197,113 @@ class Compiler:
 
         token = tokens.pop(0)
 
-        if token[0] in ['INT_KEYWORD', 'FLOAT_KEYWORD', 'STRING_KEYWORD']:
-                data_type = token[1]
-                if not tokens or tokens[0][0] != 'IDENTIFIER':
-                    raise ValueError(f"Expected identifier after data type '{data_type}'")
-                identifier_token = tokens.pop(0)
-                identifier = identifier_token[1]
+        # 🟢 Handle Variable Declarations
+        if token[0] in ['INT', 'FLOAT', 'STRING']:
+            data_type = token[1]
 
-        if token[0] in ['INCREMENT', 'DECREMENT']:  # If the token is '++' or '--'
-            if tokens and tokens[0][0] == 'IDENTIFIER':  # Ensure next token is an identifier
-                ident = tokens.pop(0)
-                self.require_semicolon(tokens)
-                if token[0] == 'INCREMENT':
-                    return IncrementNode(IdentifierNode(ident[1]), pre=True)
-                else:
-                    return DecrementNode(IdentifierNode(ident[1]), pre=True)
+            if not tokens or tokens[0][0] != 'IDENTIFIER':
+                raise ValueError(f"Expected identifier after type '{data_type}'" + "\n")
 
-        if token[0] == 'IDENTIFIER':
-            if tokens and tokens[0][0] == 'ASSIGN':
-                tokens.pop(0)
-                value = self.parse_expression(tokens)
-                self.require_semicolon(tokens)
-                return AssignmentNode(IdentifierNode(token[1]), value)
+            identifier_token = tokens.pop(0)
+            identifier = identifier_token[1]
 
-            elif tokens and tokens[0][0] == 'INCREMENT':  # Post-increment x++
-                tokens.pop(0)  # Consume '++'
-                self.require_semicolon(tokens)
-                return IncrementNode(IdentifierNode(token[1]), pre=False)
+            value = None
 
-            elif tokens and tokens[0][0] == 'DECREMENT':  # Post-decrement x--
-                tokens.pop(0)  # Consume '--'
-                self.require_semicolon(tokens)
-                return DecrementNode(IdentifierNode(token[1]), pre=False)
-            
-        if token[0] == 'IDENTIFIER':
+            # ✅ Handle optional assignment (e.g., int x = 5;)
             if tokens and tokens[0][0] == 'ASSIGN':
                 tokens.pop(0)
                 value = self.parse_expression(tokens)
 
-                if token[1] in self.symbol_table:
-                    var_info = self.symbol_table[token[1]]
-                    expected_type = self.DATA_TYPES[var_info['type']]
-                    if not self.is_valid_type(value, expected_type):
-                        raise ValueError(f"Type mismatch: '{token[1]}' expects {var_info['type']}, got {type(value).__name__}")
+            self.symbol_table[identifier] = {'type': data_type, 'value': value}
 
-                    self.symbol_table[token[1]]['value'] = value
-                else:
-                    raise ValueError(f"Undefined variable: {token[1]}")
+            self.require_semicolon(tokens)
+
+            # ✅ Ensure a valid AST node is returned
+            return AssignmentNode(IdentifierNode(identifier), value)
+
+        # 🟢 Handle Variable Assignment & Unary Operators
+        elif token[0] == 'IDENTIFIER':
+            identifier = token[1]
+
+            if identifier not in self.symbol_table:
+                raise ValueError(f"Undefined variable: '{identifier}'" + "\n")
+
+            if tokens and tokens[0][0] == 'ASSIGN':
+                tokens.pop(0)
+                value = self.parse_expression(tokens)  # ✅ Parses full expression, including (a + 3)
 
                 self.require_semicolon(tokens)
-                return AssignmentNode(IdentifierNode(token[1]), value)
 
+                return AssignmentNode(IdentifierNode(identifier), value)
 
+            # ✅ Handle Increment (x++;)
+            elif tokens and tokens[0][0] in ['INCREMENT', 'DECREMENT']:
+                op = tokens.pop(0)
+                self.require_semicolon(tokens)
+                return IncrementNode(IdentifierNode(identifier), pre=False) if op[0] == 'INCREMENT' else DecrementNode(IdentifierNode(identifier), pre=False)
+
+        # 🟢 Handle Print Statement (cout << x;)
         elif token[0] == 'COUT':
             if not tokens or tokens.pop(0)[0] != 'SHIFT_LEFT':
-                raise ValueError("Expected '<<' after 'cout'")
+                raise ValueError("Expected '<<' after 'cout'" + "\n")
             value = self.parse_expression(tokens)
             self.require_semicolon(tokens)
             return PrintNode(value)
 
+        # 🟢 Handle If Statements
         elif token[0] == 'IF':
-            if not tokens or tokens.pop(0)[0] != 'LPAREN':
-                raise ValueError("Expected '(' after 'if'")
+            self.require_token(tokens, 'LPAREN')
             condition = self.parse_expression(tokens)
-            if not tokens or tokens.pop(0)[0] != 'RPAREN':
-                raise ValueError("Expected ')' after condition")
+            self.require_token(tokens, 'RPAREN')
+
             then_branch = self.parse_block(tokens)
             else_branch = None
+
             if tokens and tokens[0][0] == 'ELSE':
                 tokens.pop(0)
                 else_branch = self.parse_block(tokens)
+
             return IfNode(condition, then_branch, else_branch)
-        
+
+        # 🟢 Handle For Loops
         elif token[0] == 'FOR':
-            if not tokens or tokens[0][0] != 'LPAREN': 
-                raise SyntaxError("Expected '('")
-            tokens.pop(0) 
-            
-            # Initialization expects a statement with a semicolon
+            self.require_token(tokens, 'LPAREN')
+
             initialization = self.parse_statement(tokens)
-            
-            # Condition is an expression followed by a semicolon
             condition = self.parse_expression(tokens)
             self.require_semicolon(tokens)
-            
-            increment = self.parse_increment_statement(tokens)
-            
-            if not tokens or tokens.pop(0)[0] != 'RPAREN':
-                raise SyntaxError("Expected ')' after increment expression")
-            
+
+            increment = self.parse_increment_statement(tokens) or NoOpNode()  # ✅ Prevents `None`
+
+            self.require_token(tokens, 'RPAREN')
             body = self.parse_block(tokens)
+
             return ForNode(initialization, condition, increment, body)
-        
+
+        # 🟢 Handle While Loops
         elif token[0] == 'WHILE':
             self.require_token(tokens, 'LPAREN')
             condition = self.parse_expression(tokens)
             self.require_token(tokens, 'RPAREN')
+
             body = self.parse_block(tokens)
             return WhileNode(condition, body)
 
-        else:
-            raise ValueError(f"Unexpected token: {token}")
+        # 🛑 If no valid statement found, raise an error
+        raise ValueError(f"Unexpected token: {token}" + "\n")
+
 
     def parse_expression(self, tokens):
         left = self.parse_term(tokens)
 
         while tokens and tokens[0][0] in ['ADDITION', 'SUBTRACTION',
-                                      'MULTIPLICATION', 'DIVISION',
-                                      'GREATER_THAN', 'LESS_THAN',
-                                      'GREATER_EQUAL', 'LESS_EQUAL',
-                                      'EQUAL', 'NOT_EQUAL']:
+                                        'MULTIPLICATION', 'DIVISION',
+                                        'GREATER_THAN', 'LESS_THAN',
+                                        'GREATER_EQUAL', 'LESS_EQUAL',
+                                        'EQUAL', 'NOT_EQUAL']:
             op_token = tokens.pop(0)
             right = self.parse_term(tokens)
+            
             left = BinaryOperationNode(left, op_token[1], right)
 
         return left
@@ -320,19 +318,19 @@ class Compiler:
             return StringNode(token[1])
         elif token[0] == 'IDENTIFIER':
             return IdentifierNode(token[1])
-        elif token[0] == 'LPAREN':
-            expr = self.parse_expression(tokens)
-            if not tokens or tokens.pop(0)[0] != 'RPAREN':
-                raise ValueError("Mismatched parentheses")
-            return expr
+        elif token[0] == 'LPAREN':  # ✅ Handle expressions inside ()
+            expr = self.parse_expression(tokens)  
+            if not tokens or tokens.pop(0)[0] != 'RPAREN':  # Ensure closing )
+                raise ValueError("Mismatched parentheses" + "\n")
+            return expr  # ✅ Return parsed expression inside ()
         elif token[0] == 'STRING':
             return StringNode(token[1])  # New StringNode
 
-        raise ValueError(f"Unexpected term: {token}")
+        raise ValueError(f"Unexpected term: {token}" + "\n")
 
     def parse_block(self, tokens):
         if not tokens or tokens.pop(0)[0] != 'LBRACE':
-            raise ValueError("Expected '{' to start block")
+            raise ValueError("Expected '{' to start block" + "\n")
 
         block = []
         while tokens and tokens[0][0] != 'RBRACE':
@@ -341,7 +339,7 @@ class Compiler:
                 block.append(statement)
 
         if not tokens or tokens.pop(0)[0] != 'RBRACE':
-            raise ValueError("Expected '}' to close block")
+            raise ValueError("Expected '}' to close block" + "\n")
 
         return block
     
@@ -369,135 +367,168 @@ class Compiler:
         return None
 
     def evaluate(self, node):
-        print(f"Debug: Evaluating Node: {node}")  # Debug print
-        if isinstance(node, list):  # Handle a list of statements
-            result = None
-            for stmt in node:
-                result = self.evaluate(stmt)
-            return result 
+        try:
+            if isinstance(node, list):  # ✅ Handle list of statements
+                results = []
+                for stmt in node:
+                    try:
+                        result = self.evaluate(stmt)
+                        results.append(result)
+                    except Exception as e:
+                        self.output.append(f"Error: {e}")  # ✅ Store error but continue execution
+                return results  # ✅ Continue execution
 
-        elif isinstance(node, NumberNode):
-            print(f"Debug: Number Node Value: {node.value}")  # Debug print
-            return node.value
+            elif isinstance(node, NumberNode):
+                return node.value
 
-        elif isinstance(node, StringNode):
-            print(f"Debug: String Node Value: {node.value}")  # Debug print
-            return node.value
+            elif isinstance(node, StringNode):
+                return node.value
 
-        
-        elif isinstance(node, IdentifierNode):
-            print(f"Debug: Identifier Node Name: {node.name}")  # Debug print
-            if node.name in self.symbol_table:
-                return self.symbol_table[node.name]
-            raise ValueError(f"Undefined variable: {node.name}")
+            elif isinstance(node, IdentifierNode):
+                if node.name in self.symbol_table:
+                    return self.symbol_table[node.name]
+                raise ValueError(f"Undefined variable: {node.name}" + "\n")
 
-        elif isinstance(node, BinaryOperationNode):
-            print(f"Debug: Binary Operation: {node.operator}")  # Debug print
-            left_value = self.evaluate(node.left)
-            right_value = self.evaluate(node.right)
-            print(f"Debug: Left Value: {left_value}, Right Value: {right_value}")  # Debug print
+            elif isinstance(node, BinaryOperationNode):
+                left_value = self.evaluate(node.left)
+                right_value = self.evaluate(node.right)
 
-            if node.operator == '+':
-                if isinstance(left_value, (int, float)) and isinstance(right_value, (int, float)):
-                    return left_value + right_value  # Numeric addition
-                elif isinstance(left_value, str) and isinstance(right_value, str):
-                    return left_value + right_value  # String concatenation
-                elif isinstance(left_value, (int, float)) and isinstance(right_value, str) or isinstance(left_value, str) and isinstance(right_value, (int, float)):
-                    return str(left_value) + str(right_value)  # Hybrid concatenation
+                if isinstance(left_value, NumberNode):
+                    left_value = left_value.value
+                if isinstance(right_value, NumberNode):
+                    right_value = right_value.value
+
+                if node.operator == '+':
+                    if isinstance(left_value, (int, float)) and isinstance(right_value, (int, float)):
+                        return left_value + right_value
+                    elif isinstance(left_value, str) and isinstance(right_value, str):
+                        return left_value + right_value
+                    elif isinstance(left_value, (int, float)) and isinstance(right_value, str) or isinstance(left_value, str) and isinstance(right_value, (int, float)):
+                        return str(left_value) + str(right_value)
+                    else:
+                        raise TypeError("Unsupported operands for +")
+
+                elif node.operator == '*':
+                    if isinstance(left_value, str) and isinstance(right_value, (int, float)) or \
+                    isinstance(right_value, str) and isinstance(left_value, (int, float)):
+                        raise TypeError("Multiplication between a string and a number is not allowed")
+                    
+                    if not isinstance(left_value, (int, float)) or not isinstance(right_value, (int, float)):
+                        raise TypeError("Unsupported operands for * (Multiplication requires two numbers)")
+                    
+                    return left_value * right_value
+
+                elif node.operator == '-':
+                    if not isinstance(left_value, (int, float)) or not isinstance(right_value, (int, float)):
+                        raise TypeError("Subtraction requires numeric operands")
+                    return left_value - right_value
+
+                elif node.operator == '/':
+                    if not isinstance(left_value, (int, float)) or not isinstance(right_value, (int, float)):
+                        raise TypeError("Division requires numeric operands")
+                    if right_value == 0:
+                        raise ZeroDivisionError("Division by zero is not allowed")
+                    return left_value / right_value
+                elif node.operator == '>':
+                    return left_value > right_value
+                elif node.operator == '<':
+                    return left_value < right_value
+                elif node.operator == '>=':
+                    return left_value >= right_value
+                elif node.operator == '<=':
+                    return left_value <= right_value
+                elif node.operator == '==':
+                    return left_value == right_value
+                elif node.operator == '!=':
+                    return left_value != right_value
                 else:
-                  raise TypeError("Unsupported operands for +")
-            elif node.operator == '-':
-                return left_value - right_value
-            elif node.operator == '*':
-                return left_value * right_value
-            elif node.operator == '/':
-                return left_value / right_value
-            elif node.operator == '>':
-                return left_value > right_value
-            elif node.operator == '<':
-                return left_value < right_value
-            elif node.operator == '>=':
-                return left_value >= right_value
-            elif node.operator == '<=':
-                return left_value <= right_value
-            elif node.operator == '==':
-                return left_value == right_value
-            elif node.operator == '!=':
-                return left_value != right_value
-            else:
-                raise ValueError(f"Unknown binary operator: {node.operator}")
+                    raise ValueError(f"Unknown binary operator: {node.operator}" + "\n")
+
+            elif isinstance(node, AssignmentNode):
+                value = self.evaluate(node.value)
+
+                if isinstance(value, NumberNode):
+                    value = value.value
+
+                self.symbol_table[node.identifier.name] = value
+                return None
+
+            elif isinstance(node, PrintNode):
+                value = self.evaluate(node.value)
+
+                if isinstance(value, NumberNode):
+                    value = value.value
+
+                if value is None:
+                    raise ValueError("Attempting to print an uninitialized or undefined variable" + "\n")
+
+                if not isinstance(value, (str, int, float)):
+                    raise TypeError(f"Print statement only supports numbers and strings, got {type(value)}")
+
+                self.output.append(str(value) + "\n")  # ✅ Ensure output appears on a new line
+                return value
             
 
-        elif isinstance(node, AssignmentNode):
-            print(f"Debug: Assignment Node: {node.identifier.name} = {node.value}")  # Debug print
-            value = self.evaluate(node.value)
-            self.symbol_table[node.identifier.name] = value
+            elif isinstance(node, IfNode):
+                condition_value = self.evaluate(node.condition)
+                if condition_value:
+                    return self.evaluate(node.then_branch)
+                elif node.else_branch:
+                    return self.evaluate(node.else_branch)
+
+            elif isinstance(node, IncrementNode):
+                if node.identifier.name not in self.symbol_table:
+                    raise ValueError(f"Undefined variable: {node.identifier.name} before increment" + "\n")
+                if node.pre:
+                    self.symbol_table[node.identifier.name] += 1
+                    return self.symbol_table[node.identifier.name]
+                else:
+                    old_value = self.symbol_table[node.identifier.name]
+                    self.symbol_table[node.identifier.name] += 1
+                    return old_value
+
+            elif isinstance(node, DecrementNode):
+                if node.identifier.name not in self.symbol_table:
+                    raise ValueError(f"Undefined variable: {node.identifier.name} before decrement" + "\n")
+                if node.pre:
+                    self.symbol_table[node.identifier.name] -= 1
+                    return self.symbol_table[node.identifier.name]
+                else:
+                    old_value = self.symbol_table[node.identifier.name]
+                    self.symbol_table[node.identifier.name] -= 1
+                    return old_value
+
+            elif isinstance(node, ForNode):
+                self.evaluate(node.initialization)
+                while self.evaluate(node.condition):
+                    for stmt in node.body:
+                        try:
+                            self.evaluate(stmt)
+                        except Exception as e:
+                            self.output.append(f"Error in loop: {e}")  # ✅ Continue loop execution
+                    if node.increment:
+                        self.evaluate(node.increment)
+                return None
+
+            elif isinstance(node, WhileNode):
+                while self.evaluate(node.condition):
+                    for stmt in node.body:
+                        try:
+                            self.evaluate(stmt)
+                        except Exception as e:
+                            self.output.append(f"Error in loop: {e}")  # ✅ Continue loop execution
+                return None
+
+            raise ValueError(f"Unknown AST node: {node}" + "\n")
+
+        except Exception as e:
+            self.output.append(f"Error: {e}")  # ✅ Store error instead of stopping execution
             return None
 
-        elif isinstance(node, PrintNode):
-            value = self.evaluate(node.value)
-            if not isinstance(value, (str, int, float)):
-                raise TypeError("Print statement only supports numbers and strings")
-            self.output.append(str(value))
-            return value
-
-        elif isinstance(node, IfNode):
-            print(f"Debug: If Node Condition: {node.condition}")  # Debug print
-            condition_value = self.evaluate(node.condition)
-            print(f"Debug: Condition Value: {condition_value}")  # Debug print
-            if condition_value:
-                return self.evaluate(node.then_branch)
-            elif node.else_branch:
-                return self.evaluate(node.else_branch)
-
-        elif isinstance(node, IncrementNode):
-            if node.identifier.name not in self.symbol_table:
-                raise ValueError(f"Undefined variable: {node.identifier.name} before increment")
-            if node.pre:
-                self.symbol_table[node.identifier.name] += 1
-                return self.symbol_table[node.identifier.name]
-            else:
-                old_value = self.symbol_table[node.identifier.name]
-                self.symbol_table[node.identifier.name] += 1
-                return old_value
-        
-        elif isinstance(node, DecrementNode):
-            if node.identifier.name not in self.symbol_table:
-                raise ValueError(f"Undefined variable: {node.identifier.name} before decrement")
-            if node.pre:
-                self.symbol_table[node.identifier.name] -= 1
-                return self.symbol_table[node.identifier.name]
-            else:
-                old_value = self.symbol_table[node.identifier.name]
-                self.symbol_table[node.identifier.name] -= 1
-                return old_value
-            
-        elif isinstance(node, ForNode):
-            # Evaluate initialization once
-            self.evaluate(node.initialization)
-            
-            # Continue while condition is true
-            while self.evaluate(node.condition):
-                for stmt in node.body:
-                    self.evaluate(stmt)
-                
-                # Evaluate increment after each iteration
-                if node.increment:
-                    self.evaluate(node.increment)
-            return None
-            
-        elif isinstance(node, WhileNode):
-            while self.evaluate(node.condition):
-                for stmt in node.body:
-                    self.evaluate(stmt)
-            return None
-        
-
-        raise ValueError(f"Unknown AST node: {node}")
 
     def require_semicolon(self, tokens):
         if not tokens or tokens.pop(0)[0] != 'SEMICOLON':
-            raise ValueError("Expected semicolon at the end of the statement")
+            raise ValueError("Expected semicolon at the end of the statement" + "\n")
         
     def require_token(self, tokens, expected_token):
         if not tokens or tokens.pop(0)[0] != expected_token:
