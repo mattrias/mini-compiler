@@ -1,5 +1,6 @@
 import customtkinter as ctk
-from mini_compiler import Compiler
+from mini_compiler import Compiler, FunctionDefinitionNode, FunctionCallNode, BlockNode
+
 
 class TokenizerApp(ctk.CTk):
     def __init__(self):
@@ -11,7 +12,7 @@ class TokenizerApp(ctk.CTk):
         # Input Label & Entry
         self.label = ctk.CTkLabel(self, text="Enter Expression:")
         self.label.pack(pady=5)
-        
+
         self.entry = ctk.CTkTextbox(self, width=300, height=100)
         self.entry.pack(pady=5)
 
@@ -48,26 +49,67 @@ class TokenizerApp(ctk.CTk):
             self.output.insert("end", f"Error: {e}")
 
     def evaluate_input(self):
-        expression = self.entry.get("1.0", "end-1c")  
+        expression = self.entry.get("1.0", "end-1c")
         try:
-            tokens = self.compiler.tokenize(expression)
-            statements = self.compiler.parse(tokens)
-
-            self.compiler.evaluate(statements)
-            
-            if self.compiler.output:
-                output_result = " ".join(self.compiler.output)
-                self.result_output.delete("1.0", "end")
-                self.result_output.insert("end", f"Result: {output_result}")
-            else:
-                self.result_output.delete("1.0", "end")
-                self.result_output.insert("end", "Result: No Output")
-            
-            self.compiler.output.clear()
-            
-        except ValueError as e:
+            # Clear previous output
             self.result_output.delete("1.0", "end")
-            self.result_output.insert("end", f"Error: {e}")
+
+            # Reset compiler state
+            self.compiler = Compiler()
+
+            # Add debug output
+            self.compiler.output.append("Starting compilation...\n")
+
+            tokens = self.compiler.tokenize(expression)
+            self.compiler.output.append(f"Tokenization complete. Found {len(tokens)} tokens.\n")
+
+            statements = self.compiler.parse(tokens)
+            self.compiler.output.append(f"Parsing complete. Found {len(statements)} statements.\n")
+
+            # Register function definitions
+            for statement in statements:
+                if isinstance(statement, FunctionDefinitionNode):
+                    self.compiler.function_definitions[statement.name] = statement
+                    self.compiler.output.append(f"Registered function: {statement.name}\n")
+
+            # Debug registered functions
+            self.compiler.output.append(f"Functions registered: {list(self.compiler.function_definitions.keys())}\n")
+
+            # Execute the main function if it exists
+            if "main" in self.compiler.function_definitions:
+                self.compiler.output.append("Executing main function...\n")
+                main_function = self.compiler.function_definitions["main"]
+
+                # Fix for BlockNode vs. list confusion in function body
+                if isinstance(main_function.body, BlockNode):
+                    main_body = main_function.body.statements
+                else:
+                    main_body = main_function.body
+
+                # Execute main function body directly
+                for stmt in main_body:
+                    self.compiler.evaluate(stmt)
+
+                self.compiler.output.append("Main function execution complete.\n")
+            else:
+                # If no main function, evaluate statements normally
+                self.compiler.output.append("No main function found. Evaluating top-level statements...\n")
+                self.compiler.evaluate(statements)
+
+            # Display output
+            if self.compiler.output:
+                output_result = "".join(self.compiler.output)
+                self.result_output.insert("end", output_result)
+            else:
+                self.result_output.insert("end", "No Output")
+
+            # Clear compiler output for next run
+            self.compiler.output.clear()
+
+        except Exception as e:
+            import traceback
+            self.result_output.insert("end", f"Error: {e}\n")
+            self.result_output.insert("end", traceback.format_exc())
 
 
 if __name__ == "__main__":
