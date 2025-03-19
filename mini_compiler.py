@@ -1,6 +1,12 @@
 class ASTNode:
     pass
 
+class BlockNode:
+    def __init__(self, statements):
+        self.statements = statements  # List of statements (e.g., assignments, expressions, etc.)
+
+    def __repr__(self):
+        return f"BlockNode(statements={self.statements})"
 
 class NumberNode(ASTNode):
     def __init__(self, value, data_type):
@@ -89,6 +95,19 @@ class ReturnNode(ASTNode):
 
 class NoOpNode(ASTNode):
     pass
+
+
+
+def require_semicolon(tokens):
+    if not tokens or tokens[0][0] != 'SEMICOLON':
+        raise ValueError("Expected semicolon, but got: " + str(tokens[0] if tokens else 'end of input'))
+    tokens.pop(0)
+
+
+def require_token(tokens, expected_token):
+    if not tokens or tokens.pop(0)[0] != expected_token:
+        raise SyntaxError(f"Expected '{expected_token}'")
+
 
 class Compiler:
     TOKENS = {
@@ -228,21 +247,21 @@ class Compiler:
                 statements.append(statement)
         return statements
 
-    def parse_statement(self, tokens):
+    def parse_statement(self, tokens, inside_function=False):
         if not tokens:
             return None
 
         token = tokens.pop(0)
 
+        # 🟢 Handle Function Definitions (FUNC)
         if token[0] == 'FUNC':
             return self.parse_function_definition(tokens)
-
         # 🟢 Handle Variable Declarations
-        if token[0] in ['INT', 'FLOAT', 'STRING']:
+        elif token[0] in ['INT', 'FLOAT', 'STRING']:
             data_type = token[1]
 
             if not tokens or tokens[0][0] != 'IDENTIFIER':
-                raise ValueError(f"Expected identifier after type '{data_type}'" + "\n")
+                raise ValueError(f"Expected identifier after type '{data_type}', but got: {tokens[0] if tokens else 'end of input'}" + "\n")
 
             identifier_token = tokens.pop(0)
             identifier = identifier_token[1]
@@ -254,48 +273,69 @@ class Compiler:
                 tokens.pop(0)
                 value = self.parse_expression(tokens)
 
-            self.symbol_table[identifier] = {'type': data_type, 'value': value}
-
-            self.require_semicolon(tokens)
-
-            # ✅ Ensure a valid AST node is returned
-            return AssignmentNode(IdentifierNode(identifier), value)
+                require_semicolon(tokens)
+                self.symbol_table[identifier] = {'type': data_type, 'value': value}
+                return AssignmentNode(IdentifierNode(identifier), value)
+            else:
+                require_semicolon(tokens)
+                self.symbol_table[identifier] = {'type': data_type, 'value': None}
+                return AssignmentNode(IdentifierNode(identifier), None)
 
         # 🟢 Handle Variable Assignment & Unary Operators
         elif token[0] == 'IDENTIFIER':
             identifier = token[1]
 
+            # Check if this is a function call first
+            if tokens and tokens[0][0] == 'LPAREN':
+                tokens.insert(0, token)  # Put the identifier back
+                return self.parse_function_call(tokens, identifier)
+
+            # Then handle assignment
             if identifier not in self.symbol_table:
-                raise ValueError(f"Undefined variable: '{identifier}'" + "\n")
+                raise ValueError(f"Undefined variable: '{identifier}'")
 
             if tokens and tokens[0][0] == 'ASSIGN':
                 tokens.pop(0)
-                value = self.parse_expression(tokens)  # ✅ Parses full expression, including (a + 3)
+                value = self.parse_expression(tokens)
 
-                self.require_semicolon(tokens)
-
+                require_semicolon(tokens)
                 return AssignmentNode(IdentifierNode(identifier), value)
 
-            # ✅ Handle Increment (x++;)
+            # 🟢 Handle Increment (x++;) and Decrement (x--;)
             elif tokens and tokens[0][0] in ['INCREMENT', 'DECREMENT']:
                 op = tokens.pop(0)
-                self.require_semicolon(tokens)
+                try:
+                    require_semicolon(tokens)  # Ensure semicolon after variable declaration
+                except ValueError as e:
+                    raise ValueError(
+                        f"Expected semicolon after variable declaration of '{identifier}', but got: {tokens[0] if tokens else 'end of input'}" + "\n") from e
                 return IncrementNode(IdentifierNode(identifier), pre=False) if op[0] == 'INCREMENT' else DecrementNode(
                     IdentifierNode(identifier), pre=False)
+            elif tokens and tokens[0][0] == 'LPAREN':
+                # Function call
+                tokens.insert(0, token)  # Put the IDENTIFIER back
+                function_call = self.parse_function_call(tokens, identifier)
+                return function_call
+            else:
+                raise ValueError(f"Unexpected token after identifier: {tokens[0]}" + "\n")
 
         # 🟢 Handle Print Statement (cout << x;)
         elif token[0] == 'COUT':
             if not tokens or tokens.pop(0)[0] != 'SHIFT_LEFT':
                 raise ValueError("Expected '<<' after 'cout'" + "\n")
             value = self.parse_expression(tokens)
-            self.require_semicolon(tokens)
+            try:
+                require_semicolon(tokens)
+            except ValueError as e:
+                raise ValueError(
+                    f"Expected semicolon after 'cout <<', but got: {tokens[0] if tokens else 'end of input'}" + "\n") from e
             return PrintNode(value)
 
         # 🟢 Handle If Statements
         elif token[0] == 'IF':
-            self.require_token(tokens, 'LPAREN')
+            require_token(tokens, 'LPAREN')
             condition = self.parse_expression(tokens)
-            self.require_token(tokens, 'RPAREN')
+            require_token(tokens, 'RPAREN')
 
             then_branch = self.parse_block(tokens)
             else_branch = None
@@ -308,82 +348,87 @@ class Compiler:
 
         # 🟢 Handle For Loops
         elif token[0] == 'FOR':
-            self.require_token(tokens, 'LPAREN')
+            require_token(tokens, 'LPAREN')
 
-            initialization = self.parse_statement(tokens)
+            initialization = self.parse_statement(tokens, inside_function)  # pass inside_function flag
             condition = self.parse_expression(tokens)
-            self.require_semicolon(tokens)
 
-            increment = self.parse_increment_statement(tokens) or NoOpNode()  # ✅ Prevents `None`
+            try:
+                require_semicolon(tokens)
+            except ValueError as e:
+                raise ValueError(
+                    f"Expected semicolon after 'for' condition, but got: {tokens[0] if tokens else 'end of input'}" + "\n") from e
 
-            self.require_token(tokens, 'RPAREN')
+            increment = self.parse_increment_statement(tokens) or NoOpNode()  # Prevents `None`
+
+            require_token(tokens, 'RPAREN')
             body = self.parse_block(tokens)
 
             return ForNode(initialization, condition, increment, body)
 
-        elif token[0] == 'RETURN':
-            value = self.parse_expression(tokens)
-            self.require_semicolon(tokens)
-            return ReturnNode(value)
-
         # 🟢 Handle While Loops
         elif token[0] == 'WHILE':
-            self.require_token(tokens, 'LPAREN')
+            require_token(tokens, 'LPAREN')
             condition = self.parse_expression(tokens)
-            self.require_token(tokens, 'RPAREN')
+            require_token(tokens, 'RPAREN')
 
             body = self.parse_block(tokens)
             return WhileNode(condition, body)
 
+        # 🟢 Handle Return Statement (Only Inside Function)
+        elif token[0] == 'RETURN':
+            if inside_function:
+                value = self.parse_expression(tokens)
+                try:
+                    require_semicolon(tokens)  # Ensure semicolon after return statement
+                except ValueError as e:
+                    raise ValueError(
+                        f"Expected semicolon after 'return', but got: {tokens[0] if tokens else 'end of input'}" + "\n") from e
+                return ReturnNode(value)
+            else:
+                raise ValueError("Return statement can only appear inside a function.")
+
+        elif token[0] == 'SEMICOLON':
+            # Empty statement
+            return None
+
         # 🛑 If no valid statement found, raise an error
-        raise ValueError(f"Unexpected token: {token}" + "\n")
+        raise ValueError(f"Unexpected token: {token}, next token: {tokens[0] if tokens else 'end of input'}" + "\n")
 
     def parse_function_definition(self, tokens):
-        if not tokens:
-            raise ValueError("Expected function name" + "\n")
+        # Get function name correctly
+        if not tokens or tokens[0][0] != 'IDENTIFIER':
+            raise ValueError("Expected function name")
 
-        token = tokens.pop(0)
-        if token[0] != 'IDENTIFIER':
-            raise ValueError(f"Expected function name, but got '{token[1]}'" + "\n")
+        name_token = tokens.pop(0)  # Pop and save the token
+        function_name = name_token[1]  # Extract name from the token
 
-        name = token[1]
-
-        self.require_token(tokens, 'LPAREN')
+        if not tokens or tokens[0][0] != 'LPAREN':
+            raise ValueError("Expected '(' after function name")
+        tokens.pop(0)  # Remove '('
 
         parameters = []
         while tokens and tokens[0][0] != 'RPAREN':
-            data_type_token = tokens.pop(0)
-            if data_type_token[0] not in ['INT', 'FLOAT', 'STRING']:
-                raise ValueError("Expected data type for parameter" + "\n")
-
-            data_type = data_type_token[1]
-
-            if not tokens or tokens[0][0] != 'IDENTIFIER':
-                raise ValueError("Expected parameter name" + "\n")
-
-            param_name_token = tokens.pop(0)
-            param_name = param_name_token[1]
-
-            parameters.append({'name': param_name, 'type': data_type})
-
+            data_type = tokens.pop(0)
+            if data_type[0] not in ['INT', 'FLOAT', 'STRING']:
+                raise ValueError("Expected data type for parameter")
+            identifier = tokens.pop(0)
+            if identifier[0] != 'IDENTIFIER':
+                raise ValueError("Expected parameter name")
+            parameters.append({'type': data_type[1], 'name': identifier[1]})
             if tokens and tokens[0][0] == 'COMMA':
                 tokens.pop(0)  # Consume comma
-            elif tokens and tokens[0][0] != 'RPAREN':
-                raise ValueError("Expected comma or ')' in parameter list" + "\n")
 
-        self.require_token(tokens, 'RPAREN')
+        if not tokens or tokens.pop(0)[0] != 'RPAREN':
+            raise ValueError("Expected ')' after parameters")
 
-        if not tokens or tokens[0][0] not in ['INT', 'FLOAT', 'STRING', 'VOID']:
-            raise ValueError("Expected return type after parameter list" + "\n")
+        return_type = tokens.pop(0)
+        if return_type[0] not in ['INT', 'FLOAT', 'STRING', 'VOID']:
+            raise ValueError("Expected return type")
 
-        return_type = tokens.pop(0)[1]
+        body = self.parse_block(tokens, True)
 
-        body = self.parse_block(tokens)
-
-        function_definition = FunctionDefinitionNode(name, parameters, body, return_type)
-        self.function_definitions[name] = function_definition  # Store the function definition
-
-        return function_definition
+        return FunctionDefinitionNode(function_name, parameters, body, return_type[1])
 
     def parse_function_call(self, tokens, name):
         tokens.pop(0)  # remove LPAREN
@@ -397,7 +442,11 @@ class Compiler:
                 raise ValueError("Expected comma or ')' in argument list" + "\n")
         if not tokens or tokens.pop(0)[0] != 'RPAREN':
             raise ValueError("Expected ')' after argument list" + "\n")
-        self.require_semicolon(tokens)
+        try:
+            require_semicolon(tokens)
+        except ValueError as e:
+            raise ValueError(
+                f"Expected semicolon after function call to '{name}', but got: {tokens[0] if tokens else 'end of input'}" + "\n") from e
         return FunctionCallNode(name, arguments)
 
     def parse_expression(self, tokens):
@@ -424,7 +473,34 @@ class Compiler:
         elif token[0] == 'STRING':
             return StringNode(token[1])
         elif token[0] == 'IDENTIFIER':
-            return IdentifierNode(token[1])
+            # Check if this is a function call within an expression
+            if tokens and tokens[0][0] == 'LPAREN':
+                # Put the identifier back so parse_function_call can use it
+                tokens.insert(0, token)
+                identifier = token[1]
+                arguments = []
+
+                # Pop the identifier again
+                tokens.pop(0)
+                # Pop the left parenthesis
+                tokens.pop(0)
+
+                # Parse arguments
+                while tokens and tokens[0][0] != 'RPAREN':
+                    arg = self.parse_expression(tokens)
+                    arguments.append(arg)
+                    if tokens and tokens[0][0] == 'COMMA':
+                        tokens.pop(0)
+                    elif tokens and tokens[0][0] != 'RPAREN':
+                        raise ValueError("Expected comma or ')' in argument list")
+
+                if not tokens or tokens.pop(0)[0] != 'RPAREN':
+                    raise ValueError("Expected ')' after argument list")
+
+                # Return the function call node (no semicolon needed here)
+                return FunctionCallNode(identifier, arguments)
+            else:
+                return IdentifierNode(token[1])
         elif token[0] == 'LPAREN':  # ✅ Handle expressions inside ()
             expr = self.parse_expression(tokens)
             if not tokens or tokens.pop(0)[0] != 'RPAREN':  # Ensure closing )
@@ -433,22 +509,22 @@ class Compiler:
         elif token[0] == 'STRING':
             return StringNode(token[1])  # New StringNode
 
-        raise ValueError(f"Unexpected term: {token}" + "\n")
+        raise ValueError(f"Unexpected term in expression: {token}" + "\n")
 
-    def parse_block(self, tokens):
+    def parse_block(self, tokens, inside_function=False):
         if not tokens or tokens.pop(0)[0] != 'LBRACE':
-            raise ValueError("Expected '{' to start block" + "\n")
+            raise ValueError("Expected '{' to begin a block" + "\n")
 
-        block = []
+        statements = []
         while tokens and tokens[0][0] != 'RBRACE':
-            statement = self.parse_statement(tokens)
+            statement = self.parse_statement(tokens, inside_function)  # Pass the inside_function flag
             if statement:
-                block.append(statement)
+                statements.append(statement)
 
         if not tokens or tokens.pop(0)[0] != 'RBRACE':
-            raise ValueError("Expected '}' to close block" + "\n")
+            raise ValueError("Expected '}' to end a block" + "\n")
 
-        return block
+        return BlockNode(statements)
 
     def parse_increment_statement(self, tokens):
         # Handle pre-increment and pre-decrement (++i or --i)
@@ -493,17 +569,26 @@ class Compiler:
 
             elif isinstance(node, IdentifierNode):
                 if node.name in self.symbol_table:
-                    return self.symbol_table[node.name]
+                    val = self.symbol_table[node.name]
+                    # Handle the case where the value might be stored with a 'value' key
+                    if isinstance(val, dict) and 'value' in val:
+                        return val['value']
+                    return val
                 raise ValueError(f"Undefined variable: {node.name}" + "\n")
 
             elif isinstance(node, BinaryOperationNode):
                 left_value = self.evaluate(node.left)
                 right_value = self.evaluate(node.right)
 
-                if isinstance(left_value, NumberNode):
-                    left_value = left_value.value
-                if isinstance(right_value, NumberNode):
-                    right_value = right_value.value
+                # Extract values from dicts if needed
+                if isinstance(left_value, dict) and 'value' in left_value:
+                    left_value = left_value['value']
+                if isinstance(right_value, dict) and 'value' in right_value:
+                    right_value = right_value['value']
+
+                # Handle None values
+                if left_value is None or right_value is None:
+                    raise ValueError("Cannot perform operation on uninitialized values" + "\n")
 
                 if node.operator == '+':
                     if isinstance(left_value, (int, float)) and isinstance(right_value, (int, float)):
@@ -515,7 +600,7 @@ class Compiler:
                             right_value, (int, float)):
                         return str(left_value) + str(right_value)
                     else:
-                        raise TypeError("Unsupported operands for +")
+                        raise TypeError(f"Unsupported operands for +: {type(left_value)} and {type(right_value)}")
 
                 elif node.operator == '*':
                     if isinstance(left_value, str) and isinstance(right_value, (int, float)) or \
@@ -647,14 +732,6 @@ class Compiler:
             self.output.append(f"Error: {e}")  # ✅ Store error instead of stopping execution
             return None
 
-    def require_semicolon(self, tokens):
-        if not tokens or tokens.pop(0)[0] != 'SEMICOLON':
-            raise ValueError("Expected semicolon at the end of the statement" + "\n")
-
-    def require_token(self, tokens, expected_token):
-        if not tokens or tokens.pop(0)[0] != expected_token:
-            raise SyntaxError(f"Expected '{expected_token}'")
-
     def evaluate_function_call(self, node):
         function_name = node.name
         arguments = [self.evaluate(arg) for arg in node.arguments]
@@ -682,7 +759,13 @@ class Compiler:
         # Execute the function body
         return_value = None
         try:
-            for statement in body:
+            # Check if body is a BlockNode and access its statements
+            if isinstance(body, BlockNode):
+                statements = body.statements
+            else:
+                statements = body
+
+            for statement in statements:
                 result = self.evaluate(statement)
                 if isinstance(statement, ReturnNode):
                     return_value = result
