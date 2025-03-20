@@ -1,9 +1,15 @@
 import tkinter as tk
-from tkinter import scrolledtext
+from tkinter import scrolledtext, simpledialog  
 from mini_compiler import Compiler, FunctionDefinitionNode, FunctionCallNode, BlockNode
-import customtkinter as ctk  # Optional for modern UI
+import customtkinter as ctk  
 
 class MiniCompilerUI:
+
+    def get_user_input(self, variable_name):
+        """Prompt user for input inside the GUI instead of using terminal input."""
+        return simpledialog.askstring("Input", f"Enter value for {variable_name}:")
+     
+
     def __init__(self, root):
         self.root = root
         self.root.title("Mini Compiler")
@@ -27,7 +33,7 @@ class MiniCompilerUI:
         self.output_panel.pack(fill=tk.BOTH, expand=True, pady=5)
         
         # Initialize Compiler
-        self.compiler = Compiler()
+        self.compiler = Compiler(ui=self)
         
     def run_code(self):
         """Executes the code from the editor"""

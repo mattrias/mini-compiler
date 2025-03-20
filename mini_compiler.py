@@ -156,11 +156,12 @@ class Compiler:
         'string': str
     }
 
-    def __init__(self):
+    def __init__(self, ui=None):  
         self.symbol_table = {}
         self.output = []
         self.input_queue = []
         self.function_definitions = {}
+        self.ui = ui
 
     def tokenize(self, input):
         tokens = []
@@ -350,7 +351,7 @@ class Compiler:
             require_semicolon(tokens)  # Ensure semicolon at end
 
             cin_node = CinNode(IdentifierNode(identifier))
-            print(f"✅ Parsed CinNode: {cin_node}")  # Debugging output
+
 
             return cin_node
 
@@ -665,24 +666,26 @@ class Compiler:
                 return None
             
             elif isinstance(node, CinNode):
-
                 if node.identifier.name not in self.symbol_table:
                     self.output.append(f"Error: Undefined variable '{node.identifier.name}' before input.\n")
-            
                     return None
 
                 if not isinstance(self.symbol_table[node.identifier.name], dict):
                     self.symbol_table[node.identifier.name] = {'type': 'string', 'value': None}
 
-                symbol_entry = self.symbol_table[node.identifier.name]  
-    
+                # Ensure UI instance is available
+                if self.ui:
+                    value = self.ui.get_user_input(node.identifier.name)
+                else:
+                    self.output.append(f"Error: UI reference is missing in Compiler. Cannot prompt for input.\n")
+                    return None
 
-                expected_type = symbol_entry.get('type', 'string')
+                if value is None:
+                    self.output.append(f"Error: No input provided for '{node.identifier.name}'.\n")
+                    return None
 
-                # Fetch input dynamically
-                value = input(f"Enter value for {node.identifier.name}: ").strip()
-
-                # Convert input based on expected type
+                # Convert input to expected type
+                expected_type = self.symbol_table[node.identifier.name].get('type', 'string')
                 try:
                     if expected_type == "int":
                         value = int(value)
@@ -692,13 +695,9 @@ class Compiler:
                     self.output.append(f"Error: Invalid input for '{node.identifier.name}', expected {expected_type}.\n")
                     return None
 
-                # Store the value in symbol_table
+                # Store value in the symbol table
                 self.symbol_table[node.identifier.name]['value'] = value
-                
-
-
-                return value  # Return input value
-
+                return value
 
 
 
