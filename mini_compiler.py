@@ -69,10 +69,14 @@ class DecrementNode(ASTNode):
         self.identifier = identifier
         self.pre = pre
 
+class CinNode(ASTNode):
+    def __init__(self, identifier):
+        self.identifier = identifier
 
 class PrintNode(ASTNode):
     def __init__(self, value):
         self.value = value
+        
 
 class FunctionDefinitionNode(ASTNode):
     def __init__(self, name, parameters, body, return_type):
@@ -133,7 +137,9 @@ class Compiler:
         '==': 'EQUAL',
         '!=': 'NOT_EQUAL',
         'cout': 'COUT',
+        'cin': 'CIN',
         '<<': 'SHIFT_LEFT',
+        '>>': 'SHIFT_RIGHT',
         '++': 'INCREMENT',
         '--': 'DECREMENT',
         'int': 'INT',
@@ -153,6 +159,7 @@ class Compiler:
     def __init__(self):
         self.symbol_table = {}
         self.output = []
+        self.input_queue = []
         self.function_definitions = {}
 
     def tokenize(self, input):
@@ -253,35 +260,35 @@ class Compiler:
 
         token = tokens.pop(0)
 
-        # 🟢 Handle Function Definitions (FUNC)
         if token[0] == 'FUNC':
             return self.parse_function_definition(tokens)
-        # 🟢 Handle Variable Declarations
-        elif token[0] in ['INT', 'FLOAT', 'STRING']:
+        
+
+        elif token[0] in ['INT', 'FLOAT', 'STRING']:  # Handle variable declaration
             data_type = token[1]
 
             if not tokens or tokens[0][0] != 'IDENTIFIER':
-                raise ValueError(f"Expected identifier after type '{data_type}', but got: {tokens[0] if tokens else 'end of input'}" + "\n")
+                raise ValueError(f"Expected identifier after type '{data_type}', but got {tokens[0] if tokens else 'end of input'}")
 
             identifier_token = tokens.pop(0)
             identifier = identifier_token[1]
 
-            value = None
+            value = None  # Default value
 
-            # ✅ Handle optional assignment (e.g., int x = 5;)
-            if tokens and tokens[0][0] == 'ASSIGN':
+            if tokens and tokens[0][0] == 'ASSIGN':  # Handle `int x = 10;`
                 tokens.pop(0)
                 value = self.parse_expression(tokens)
 
-                require_semicolon(tokens)
-                self.symbol_table[identifier] = {'type': data_type, 'value': value}
-                return AssignmentNode(IdentifierNode(identifier), value)
-            else:
-                require_semicolon(tokens)
-                self.symbol_table[identifier] = {'type': data_type, 'value': None}
-                return AssignmentNode(IdentifierNode(identifier), None)
+            require_semicolon(tokens)  # Ensure semicolon at end
 
-        # 🟢 Handle Variable Assignment & Unary Operators
+            if isinstance(value, NumberNode):
+                value = value.value  # Convert AST node to raw int/float value
+
+            self.symbol_table[identifier] = {'type': data_type, 'value': value}
+            print(f"✅ Declared variable '{identifier}': {self.symbol_table[identifier]}")  # Debugging output
+
+            return AssignmentNode(IdentifierNode(identifier), NumberNode(value, data_type) if value is not None else None)
+
         elif token[0] == 'IDENTIFIER':
             identifier = token[1]
 
@@ -301,7 +308,6 @@ class Compiler:
                 require_semicolon(tokens)
                 return AssignmentNode(IdentifierNode(identifier), value)
 
-            # 🟢 Handle Increment (x++;) and Decrement (x--;)
             elif tokens and tokens[0][0] in ['INCREMENT', 'DECREMENT']:
                 op = tokens.pop(0)
                 try:
@@ -319,7 +325,6 @@ class Compiler:
             else:
                 raise ValueError(f"Unexpected token after identifier: {tokens[0]}" + "\n")
 
-        # 🟢 Handle Print Statement (cout << x;)
         elif token[0] == 'COUT':
             if not tokens or tokens.pop(0)[0] != 'SHIFT_LEFT':
                 raise ValueError("Expected '<<' after 'cout'" + "\n")
@@ -330,8 +335,25 @@ class Compiler:
                 raise ValueError(
                     f"Expected semicolon after 'cout <<', but got: {tokens[0] if tokens else 'end of input'}" + "\n") from e
             return PrintNode(value)
+        
+        elif token[0] == 'CIN':  
+            if not tokens or tokens[0][0] != 'SHIFT_RIGHT':
+                raise ValueError(f"Expected '>>' after 'cin', but got {tokens[0] if tokens else 'end of input'}")  
+            
+            tokens.pop(0)  # Consume 'SHIFT_RIGHT'
 
-        # 🟢 Handle If Statements
+            if not tokens or tokens[0][0] != 'IDENTIFIER':
+                raise ValueError(f"Expected identifier after 'cin >>', but got {tokens[0] if tokens else 'end of input'}")  
+
+            identifier = tokens.pop(0)[1]  # Extract variable name
+
+            require_semicolon(tokens)  # Ensure semicolon at end
+
+            cin_node = CinNode(IdentifierNode(identifier))
+            print(f"✅ Parsed CinNode: {cin_node}")  # Debugging output
+
+            return cin_node
+
         elif token[0] == 'IF':
             require_token(tokens, 'LPAREN')
             condition = self.parse_expression(tokens)
@@ -346,7 +368,6 @@ class Compiler:
 
             return IfNode(condition, then_branch, else_branch)
 
-        # 🟢 Handle For Loops
         elif token[0] == 'FOR':
             require_token(tokens, 'LPAREN')
 
@@ -366,7 +387,6 @@ class Compiler:
 
             return ForNode(initialization, condition, increment, body)
 
-        # 🟢 Handle While Loops
         elif token[0] == 'WHILE':
             require_token(tokens, 'LPAREN')
             condition = self.parse_expression(tokens)
@@ -375,7 +395,6 @@ class Compiler:
             body = self.parse_block(tokens)
             return WhileNode(condition, body)
 
-        # 🟢 Handle Return Statement (Only Inside Function)
         elif token[0] == 'RETURN':
             if inside_function:
                 value = self.parse_expression(tokens)
@@ -392,7 +411,6 @@ class Compiler:
             # Empty statement
             return None
 
-        # 🛑 If no valid statement found, raise an error
         raise ValueError(f"Unexpected token: {token}, next token: {tokens[0] if tokens else 'end of input'}" + "\n")
 
     def parse_function_definition(self, tokens):
@@ -551,16 +569,15 @@ class Compiler:
 
     def evaluate(self, node):
         try:
-            if isinstance(node, list):  # ✅ Handle list of statements
+            if isinstance(node, list):  
                 results = []
                 for stmt in node:
                     try:
                         result = self.evaluate(stmt)
                         results.append(result)
                     except Exception as e:
-                        self.output.append(f"Error: {e}")  # ✅ Store error but continue execution
-                return results  # ✅ Continue execution
-
+                        self.output.append(f"Error: {e}")  
+                return results  
             elif isinstance(node, NumberNode):
                 return node.value
 
@@ -646,6 +663,44 @@ class Compiler:
 
                 self.symbol_table[node.identifier.name] = value
                 return None
+            
+            elif isinstance(node, CinNode):
+
+                if node.identifier.name not in self.symbol_table:
+                    self.output.append(f"Error: Undefined variable '{node.identifier.name}' before input.\n")
+            
+                    return None
+
+                if not isinstance(self.symbol_table[node.identifier.name], dict):
+                    self.symbol_table[node.identifier.name] = {'type': 'string', 'value': None}
+
+                symbol_entry = self.symbol_table[node.identifier.name]  
+    
+
+                expected_type = symbol_entry.get('type', 'string')
+
+                # Fetch input dynamically
+                value = input(f"Enter value for {node.identifier.name}: ").strip()
+
+                # Convert input based on expected type
+                try:
+                    if expected_type == "int":
+                        value = int(value)
+                    elif expected_type == "float":
+                        value = float(value)
+                except ValueError:
+                    self.output.append(f"Error: Invalid input for '{node.identifier.name}', expected {expected_type}.\n")
+                    return None
+
+                # Store the value in symbol_table
+                self.symbol_table[node.identifier.name]['value'] = value
+                
+
+
+                return value  # Return input value
+
+
+
 
             elif isinstance(node, PrintNode):
                 value = self.evaluate(node.value)
