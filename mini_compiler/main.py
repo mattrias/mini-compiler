@@ -1,6 +1,6 @@
 import tkinter as tk
 from tkinter import scrolledtext, simpledialog  
-from mini_compiler import Compiler, FunctionDefinitionNode, FunctionCallNode, BlockNode
+from .compiler import Compiler
 import customtkinter as ctk  
 
 class MiniCompilerUI:
@@ -14,7 +14,7 @@ class MiniCompilerUI:
         self.root = root
         self.root.title("Mini Compiler")
         self.root.geometry("800x600")
-        ctk.set_appearance_mode("dark")  # Optional: dark theme
+        ctk.set_appearance_mode("dark") 
         
         # Frame Layout
         self.frame = ctk.CTkFrame(root)
@@ -36,29 +36,41 @@ class MiniCompilerUI:
         self.compiler = Compiler(ui=self)
         
     def run_code(self):
-        """Executes the code from the editor"""
+        """Executes the code from the editor."""
         code = self.code_editor.get("1.0", tk.END).strip()
         if not code:
             self.display_output("Error: No code to run.\n")
             return
-        
+
         try:
             tokens = self.compiler.tokenize(code)
             statements = self.compiler.parse(tokens)
-            output = self.compiler.evaluate(statements)
-            
-            # Convert output list to string
+            self.compiler.evaluate(statements)
+
+            # ✅ Debugging prints to check where output is lost
+            print("DEBUG: Compiler output before GUI ->", repr(self.compiler.output))  
+
+            # Convert output list to a string
             result = "".join(self.compiler.output)
+
+            print("DEBUG: Final result before display_output ->", repr(result))  
+
+            # Display the output in the GUI
             self.display_output(result)
+
         except Exception as e:
             self.display_output(f"Error: {str(e)}\n")
+
+
     
     def display_output(self, text):
         """Display text in output panel"""
+        print("DEBUG: Output being displayed:", text)
         self.output_panel.config(state='normal')
         self.output_panel.delete("1.0", tk.END)
         self.output_panel.insert(tk.END, text)
         self.output_panel.config(state='disabled')
+        
 
 if __name__ == "__main__":
     root = ctk.CTk()  # Use CustomTkinter for modern UI (or replace with tk.Tk())
