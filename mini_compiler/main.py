@@ -73,8 +73,6 @@ class MiniCompilerUI:
         # Initialize Compiler
         self.compiler = Compiler(ui=self)
 
-        # Set sample code
-        self.set_sample_code()
 
     def create_menu(self):
         """Create application menu"""
@@ -326,7 +324,7 @@ class MiniCompilerUI:
         """Show about dialog"""
         messagebox.showinfo(
             "About Mini Compiler",
-            "Mini Compiler\nVersion 1.0\n\nA simple compiler for educational purposes."
+            "Mini Compiler\nVersion 1.0\n\nA simple compiler for educational purposes.\nDeveloped by:\nTerra"
         )
 
     def debug_tokens(tokens):
