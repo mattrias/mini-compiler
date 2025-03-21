@@ -324,7 +324,7 @@ class MiniCompilerUI:
         """Show about dialog"""
         messagebox.showinfo(
             "About Mini Compiler",
-            "Mini Compiler\nVersion 1.0\n\nA simple compiler for educational purposes.\nDeveloped by:\nTerra"
+            "Mini Compiler\nVersion 1.0\n\nA simple compiler for educational purposes.\nDeveloped by: Terra"
         )
 
     def debug_tokens(tokens):
