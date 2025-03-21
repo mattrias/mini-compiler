@@ -13,6 +13,8 @@ class Evaluator:
 
     def evaluate(self, node):
         """Evaluates an AST node and executes operations accordingly."""
+        self.output.clear()
+
         try:
             if isinstance(node, list):
                 results = [self.evaluate(stmt) for stmt in node]
