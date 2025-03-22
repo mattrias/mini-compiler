@@ -13,6 +13,9 @@ class Evaluator:
 
     def evaluate(self, node):
         """Evaluates an AST node and executes operations accordingly."""
+        
+        self.output.clear()
+        
         try:
             if isinstance(node, list):
                 results = [self.evaluate(stmt) for stmt in node]
@@ -155,6 +158,7 @@ class Evaluator:
                 return self.evaluate_function_call(node)
 
             elif isinstance(node, FunctionDefinitionNode):
+                self.symbol_table = node.name
                 return None  # Functions are stored during parsing
 
             elif isinstance(node, ReturnNode):
@@ -173,6 +177,8 @@ class Evaluator:
     def evaluate_function_call(self, node):
         function_name = node.name
         arguments = [self.evaluate(arg) for arg in node.arguments]
+        print(f"DEBUG evaluator.py: Function Name passed to eval func call: {function_name}")
+        print(f"DEBUG evaluator.py: symbol_table items: {self.symbol_table}")
 
         if function_name not in self.symbol_table:
             raise ValueError(f"Undefined function: {function_name}")
