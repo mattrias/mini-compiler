@@ -275,7 +275,7 @@ class Compiler:
 
             value = None
 
-            # ✅ Handle optional assignment (e.g., int x = 5;)
+            # Handle optional assignment (e.g., int x = 5;)
             if tokens and tokens[0][0] == 'ASSIGN':
                 tokens.pop(0)
                 value = self.parse_expression(tokens)
@@ -288,7 +288,7 @@ class Compiler:
                 self.symbol_table[identifier] = {'type': data_type, 'value': None}
                 return AssignmentNode(IdentifierNode(identifier), None)
 
-        # 🟢 Handle Variable Assignment & Unary Operators
+        #  Handle Variable Assignment & Unary Operators
         elif token[0] == 'IDENTIFIER':
             identifier = token[1]
 
@@ -308,7 +308,7 @@ class Compiler:
                 require_semicolon(tokens)
                 return AssignmentNode(IdentifierNode(identifier), value)
 
-            # 🟢 Handle Increment (x++;) and Decrement (x--;)
+            #  Handle Increment (x++;) and Decrement (x--;)
             elif tokens and tokens[0][0] in ['INCREMENT', 'DECREMENT']:
                 op = tokens.pop(0)
                 try:
@@ -375,7 +375,7 @@ class Compiler:
 
             return IfNode(condition, then_branch, else_branch)
 
-        # 🟢 Handle For Loops
+        #  Handle For Loops
         elif token[0] == 'FOR':
             require_token(tokens, 'LPAREN')
 
@@ -395,7 +395,7 @@ class Compiler:
 
             return ForNode(initialization, condition, increment, body)
 
-        # 🟢 Handle While Loops
+        #  Handle While Loops
         elif token[0] == 'WHILE':
             require_token(tokens, 'LPAREN')
             condition = self.parse_expression(tokens)
@@ -404,7 +404,7 @@ class Compiler:
             body = self.parse_block(tokens)
             return WhileNode(condition, body)
 
-        # 🟢 Handle Return Statement (Only Inside Function)
+        #  Handle Return Statement (Only Inside Function)
         elif token[0] == 'RETURN':
             if inside_function:
                 value = self.parse_expression(tokens)
@@ -421,7 +421,7 @@ class Compiler:
             # Empty statement
             return None
 
-        # 🛑 If no valid statement found, raise an error
+        #  If no valid statement found, raise an error
         raise ValueError(f"Unexpected token: {token}, next token: {tokens[0] if tokens else 'end of input'}" + "\n")
 
     def parse_function_definition(self, tokens):
@@ -530,11 +530,11 @@ class Compiler:
                 return FunctionCallNode(identifier, arguments)
             else:
                 return IdentifierNode(token[1])
-        elif token[0] == 'LPAREN':  # ✅ Handle expressions inside ()
+        elif token[0] == 'LPAREN':  #  Handle expressions inside ()
             expr = self.parse_expression(tokens)
             if not tokens or tokens.pop(0)[0] != 'RPAREN':  # Ensure closing )
                 raise ValueError("Mismatched parentheses" + "\n")
-            return expr  # ✅ Return parsed expression inside ()
+            return expr  #  Return parsed expression inside ()
         elif token[0] == 'STRING':
             return StringNode(token[1])  # New StringNode
 
@@ -580,15 +580,15 @@ class Compiler:
 
     def evaluate(self, node):
         try:
-            if isinstance(node, list):  # ✅ Handle list of statements
+            if isinstance(node, list):  #  Handle list of statements
                 results = []
                 for stmt in node:
                     try:
                         result = self.evaluate(stmt)
                         results.append(result)
                     except Exception as e:
-                        self.output.append(f"Error: {e}")  # ✅ Store error but continue execution
-                return results  # ✅ Continue execution
+                        self.output.append(f"Error: {e}")  #  Store error but continue execution
+                return results  #  Continue execution
 
             elif isinstance(node, NumberNode):
                 return node.value
@@ -704,7 +704,7 @@ class Compiler:
                 # Store the value in the symbol table
                 self.symbol_table[var_name]['value'] = user_input
 
-                return user_input  # ✅ Return the inputted value
+                return user_input  #  Return the inputted value
 
 
 
@@ -730,7 +730,7 @@ class Compiler:
                 if not isinstance(value, (str, int, float)):
                     raise TypeError(f"Print statement only supports numbers and strings, got {type(value)}")
 
-                self.output.append(str(value) + "\n")  # ✅ Ensure output appears on a new line
+                self.output.append(str(value) + "\n")  #  Ensure output appears on a new line
                 return value
 
 
@@ -770,7 +770,7 @@ class Compiler:
                         try:
                             self.evaluate(stmt)
                         except Exception as e:
-                            self.output.append(f"Error in loop: {e}")  # ✅ Continue loop execution
+                            self.output.append(f"Error in loop: {e}")  #  Continue loop execution
                     if node.increment:
                         self.evaluate(node.increment)
                 return None
@@ -781,7 +781,7 @@ class Compiler:
                         try:
                             self.evaluate(stmt)
                         except Exception as e:
-                            self.output.append(f"Error in loop: {e}")  # ✅ Continue loop execution
+                            self.output.append(f"Error in loop: {e}")  #  Continue loop execution
                 return None
 
             elif isinstance(node, FunctionCallNode):
@@ -800,7 +800,7 @@ class Compiler:
             #raise ValueError(f"Unknown AST node: {node}" + "\n")
 
         except Exception as e:
-            self.output.append(f"Error: {e}")  # ✅ Store error instead of stopping execution
+            self.output.append(f"Error: {e}")  #  Store error instead of stopping execution
             return None
 
     def evaluate_function_call(self, node):
