@@ -69,6 +69,9 @@ class DecrementNode(ASTNode):
         self.identifier = identifier
         self.pre = pre
 
+class CinNode(ASTNode):
+    def __init__(self, identifier):
+        self.identifier = identifier
 
 class PrintNode(ASTNode):
     def __init__(self, value):
@@ -132,8 +135,10 @@ class Compiler:
         '<=': 'LESS_EQUAL',
         '==': 'EQUAL',
         '!=': 'NOT_EQUAL',
+        'cin': 'CIN',
         'cout': 'COUT',
         '<<': 'SHIFT_LEFT',
+        '>>': 'SHIFT_RIGHT',
         '++': 'INCREMENT',
         '--': 'DECREMENT',
         'int': 'INT',
@@ -243,6 +248,8 @@ class Compiler:
         statements = []
         while tokens:
             statement = self.parse_statement(tokens)
+            if statement is None:
+                raise ValueError("Error: `parse_statement` returned None when parsing cin")
             if statement:
                 statements.append(statement)
         return statements
@@ -253,10 +260,10 @@ class Compiler:
 
         token = tokens.pop(0)
 
-        # 🟢 Handle Function Definitions (FUNC)
+        
         if token[0] == 'FUNC':
             return self.parse_function_definition(tokens)
-        # 🟢 Handle Variable Declarations
+        
         elif token[0] in ['INT', 'FLOAT', 'STRING']:
             data_type = token[1]
 
@@ -319,7 +326,7 @@ class Compiler:
             else:
                 raise ValueError(f"Unexpected token after identifier: {tokens[0]}" + "\n")
 
-        # 🟢 Handle Print Statement (cout << x;)
+        # Handle Print Statement (cout << x;)
         elif token[0] == 'COUT':
             if not tokens or tokens.pop(0)[0] != 'SHIFT_LEFT':
                 raise ValueError("Expected '<<' after 'cout'" + "\n")
@@ -330,8 +337,30 @@ class Compiler:
                 raise ValueError(
                     f"Expected semicolon after 'cout <<', but got: {tokens[0] if tokens else 'end of input'}" + "\n") from e
             return PrintNode(value)
+        
+        elif token[0] == 'CIN':  
+            if not tokens or tokens[0][0] != 'SHIFT_RIGHT':
+                raise ValueError(f"Expected '>>' after 'cin', but got {tokens[0] if tokens else 'end of input'}")  
 
-        # 🟢 Handle If Statements
+            tokens.pop(0)  # Consume 'SHIFT_RIGHT'
+
+            if not tokens or tokens[0][0] != 'IDENTIFIER':
+                raise ValueError(f"Expected identifier after 'cin >>', but got {tokens[0] if tokens else 'end of input'}")  
+
+            identifier = tokens.pop(0)[1]  # Extract variable name
+
+            require_semicolon(tokens)  # Ensure semicolon at end
+
+            cin_node = CinNode(IdentifierNode(identifier))
+            
+            # Debugging: Check if `cin_node` is None (should never happen)
+            if cin_node is None:
+                raise ValueError("Error: `parse_statement` did not return a valid `CinNode`")
+
+            return cin_node
+
+
+        #  Handle If Statements
         elif token[0] == 'IF':
             require_token(tokens, 'LPAREN')
             condition = self.parse_expression(tokens)
@@ -638,6 +667,48 @@ class Compiler:
                 else:
                     raise ValueError(f"Unknown binary operator: {node.operator}" + "\n")
 
+            elif isinstance(node, CinNode):
+                var_name = node.identifier.name
+
+                # Ensure the variable exists in the symbol table
+                if var_name not in self.symbol_table:
+                    self.output.append(f"Error: Undefined variable '{var_name}' before input.\n")
+                    return None
+
+                # Ensure variable entry is initialized
+                if self.symbol_table[var_name] is None:
+                    self.symbol_table[var_name] = {'type': 'string', 'value': None}  # Default type is string
+
+                # Use the GUI to get input instead of terminal input()
+                from main import CompilerApp  # Import GUI class
+                user_input = CompilerApp.get_user_input(self, var_name)  # Call GUI input function
+
+                # Handle case where user cancels input
+                if user_input is None:
+                    self.output.append(f"Error: No input provided for '{var_name}'.\n")
+                    return None
+
+                # Get expected data type
+                var_type = self.symbol_table[var_name].get('type', 'string')
+
+                # Convert input based on type
+                try:
+                    if var_type == 'int':
+                        user_input = int(user_input)
+                    elif var_type == 'float':
+                        user_input = float(user_input)
+                except ValueError:
+                    self.output.append(f"Error: Invalid input for '{var_name}', expected {var_type}.\n")
+                    return None
+
+                # Store the value in the symbol table
+                self.symbol_table[var_name]['value'] = user_input
+
+                return user_input  # ✅ Return the inputted value
+
+
+
+
             elif isinstance(node, AssignmentNode):
                 value = self.evaluate(node.value)
 
@@ -723,10 +794,10 @@ class Compiler:
             elif isinstance(node, ReturnNode):
                 return self.evaluate(node.expression)
 
-            elif isinstance(node, NoOpNode):
-                return None
+           # elif isinstance(node, NoOpNode):
+            #    return None
 
-            raise ValueError(f"Unknown AST node: {node}" + "\n")
+            #raise ValueError(f"Unknown AST node: {node}" + "\n")
 
         except Exception as e:
             self.output.append(f"Error: {e}")  # ✅ Store error instead of stopping execution
