@@ -1,10 +1,16 @@
 class ASTNode:
     pass
 
+
 class BlockNode:
     def __init__(self, statements):
-        self.statements = statements  # List of statements (e.g., assignments, expressions, etc.)
+        self.statements = statements  # List of statements
 
+    def __repr__(self):
+        return f"BlockNode(statements={self.statements})"
+
+    def __iter__(self):
+        return iter(self.statements)
     def __repr__(self):
         return f"BlockNode(statements={self.statements})"
 
@@ -670,43 +676,35 @@ class Compiler:
             elif isinstance(node, CinNode):
                 var_name = node.identifier.name
 
-                # Ensure the variable exists in the symbol table
                 if var_name not in self.symbol_table:
                     self.output.append(f"Error: Undefined variable '{var_name}' before input.\n")
                     return None
 
-                # Ensure variable entry is initialized
-                if self.symbol_table[var_name] is None:
-                    self.symbol_table[var_name] = {'type': 'string', 'value': None}  # Default type is string
+                
+                if not isinstance(self.symbol_table[var_name], dict):
+                    self.symbol_table[var_name] = {'type': 'int', 'value': self.symbol_table[var_name]}
 
-                # Use the GUI to get input instead of terminal input()
-                from main import CompilerApp  # Import GUI class
-                user_input = CompilerApp.get_user_input(self, var_name)  # Call GUI input function
+                from main import CompilerApp
+                user_input = CompilerApp.get_user_input(self, var_name)  
 
-                # Handle case where user cancels input
                 if user_input is None:
                     self.output.append(f"Error: No input provided for '{var_name}'.\n")
                     return None
 
-                # Get expected data type
                 var_type = self.symbol_table[var_name].get('type', 'string')
 
-                # Convert input based on type
                 try:
                     if var_type == 'int':
-                        user_input = int(user_input)
+                        user_input = int(user_input)  
                     elif var_type == 'float':
                         user_input = float(user_input)
                 except ValueError:
                     self.output.append(f"Error: Invalid input for '{var_name}', expected {var_type}.\n")
                     return None
 
-                # Store the value in the symbol table
+                # Store correctly as a dictionary
                 self.symbol_table[var_name]['value'] = user_input
-
-                return user_input  #  Return the inputted value
-
-
+                return user_input
 
 
             elif isinstance(node, AssignmentNode):
