@@ -359,7 +359,7 @@ class Compiler:
 
             cin_node = CinNode(IdentifierNode(identifier))
             
-            # Debugging: Check if `cin_node` is None (should never happen)
+
             if cin_node is None:
                 raise ValueError("Error: `parse_statement` did not return a valid `CinNode`")
 
@@ -373,13 +373,15 @@ class Compiler:
             require_token(tokens, 'RPAREN')
 
             then_branch = self.parse_block(tokens)
-            else_branch = None
 
+            else_branch = None
             if tokens and tokens[0][0] == 'ELSE':
                 tokens.pop(0)
                 else_branch = self.parse_block(tokens)
 
             return IfNode(condition, then_branch, else_branch)
+
+
 
         #  Handle For Loops
         elif token[0] == 'FOR':
@@ -546,20 +548,22 @@ class Compiler:
 
         raise ValueError(f"Unexpected term in expression: {token}" + "\n")
 
-    def parse_block(self, tokens, inside_function=False):
-        if not tokens or tokens.pop(0)[0] != 'LBRACE':
-            raise ValueError("Expected '{' to begin a block" + "\n")
+    def parse_block(self, tokens):
+            if not tokens or tokens.pop(0)[0] != 'LBRACE':
+                raise ValueError("Expected '{' to begin a block")
 
-        statements = []
-        while tokens and tokens[0][0] != 'RBRACE':
-            statement = self.parse_statement(tokens, inside_function)  # Pass the inside_function flag
-            if statement:
-                statements.append(statement)
+            statements = []
+            while tokens and tokens[0][0] != 'RBRACE':
+                statement = self.parse_statement(tokens)
+                if statement:
+                    statements.append(statement)
 
-        if not tokens or tokens.pop(0)[0] != 'RBRACE':
-            raise ValueError("Expected '}' to end a block" + "\n")
+            if not tokens or tokens.pop(0)[0] != 'RBRACE':
+                raise ValueError("Expected '}' to end a block")
 
-        return BlockNode(statements)
+            return BlockNode(statements)
+
+
 
     def parse_increment_statement(self, tokens):
         # Handle pre-increment and pre-decrement (++i or --i)
@@ -672,6 +676,14 @@ class Compiler:
                     return left_value != right_value
                 else:
                     raise ValueError(f"Unknown binary operator: {node.operator}" + "\n")
+                
+            elif isinstance(node, BlockNode):
+    
+
+                for stmt in node.statements:
+                    self.evaluate(stmt)  # Ensure every statement in the block is executed
+                return None
+
 
             elif isinstance(node, CinNode):
                 var_name = node.identifier.name
@@ -723,21 +735,23 @@ class Compiler:
                     value = value.value
 
                 if value is None:
-                    raise ValueError("Attempting to print an uninitialized or undefined variable" + "\n")
+                    raise ValueError("Attempting to print an uninitialized or undefined variable")
 
                 if not isinstance(value, (str, int, float)):
                     raise TypeError(f"Print statement only supports numbers and strings, got {type(value)}")
 
-                self.output.append(str(value) + "\n")  #  Ensure output appears on a new line
+                self.output.append(str(value) + "\n")  # Append the output correctly
                 return value
 
 
             elif isinstance(node, IfNode):
                 condition_value = self.evaluate(node.condition)
-                if condition_value:
+
+                if condition_value:  
                     return self.evaluate(node.then_branch)
                 elif node.else_branch:
                     return self.evaluate(node.else_branch)
+
 
             elif isinstance(node, IncrementNode):
                 if node.identifier.name not in self.symbol_table:
